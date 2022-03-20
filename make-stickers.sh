@@ -7,8 +7,10 @@
 
 # A square image will be downscaled to DIMENSION*DIMENSION (max).
 # Non-square images will be downscaled to the area of DIMENSION*DIMENSION.
-DIMENSION=200
-area=$(echo $DIMENSION | awk '{ print $1 * $1 }')
+IMG_DIMENSION=400
+GIF_DIMENSION=200
+img_area=$(echo $IMG_DIMENSION | awk '{ print $1 * $1 }')
+gif_area=$(echo $GIF_DIMENSION | awk '{ print $1 * $1 }')
 
 # ImageMagick is required
 command -v magick > /dev/null
@@ -66,7 +68,7 @@ scale_down_image() {
 	mkdir -p "./Stickers/$directory"
 	# @: scale image area to $area; >: only downscale images
 	# Doc https://legacy.imagemagick.org/Usage/resize/#resize
-	err_msg=$(magick convert "$IMG_DIR/$file" -resize "$area@>" "$final_file" 2>&1 >/dev/null) || return 1
+	err_msg=$(magick convert "$IMG_DIR/$file" -resize "$img_area@>" "$final_file" 2>&1 >/dev/null) || return 1
 }
 
 scale_down_gif() {
@@ -92,7 +94,7 @@ scale_down_gif() {
 	# Downscale each frame
 	for frame in $tmp_dir/frames/*; do
 		frame_name=$(basename $frame)
-		err_msg=$(magick convert "$frame" -resize "$area@>" "$tmp_dir/frames/final_$frame_name" 2>&1 >/dev/null) || return 1
+		err_msg=$(magick convert "$frame" -resize "$gif_area@>" "$tmp_dir/frames/final_$frame_name" 2>&1 >/dev/null) || return 1
 	done
 
 	# ffmpeg -y -r $fps -i $tmp_dir/frames/final_%04d.png -i $tmp_dir/palette.png -filter_complex paletteuse -r $fps "./Stickers/$file"
@@ -124,7 +126,9 @@ for file in $files; do
 	if [ $? -eq 0 ]; then
 		echo "Created: $final_file"
 	else
-		>&2 echo -e "Failed to convert "$(realpath $IMG_DIR/$file)". Error message:\n$err_msg"
+		>&2 echo -e "Failed to convert "$(realpath $IMG_DIR/$file)". Error message:"
+		>&2 echo "$err_msg"
+		>&2 echo
 	fi
 done
 IFS="$old_IFS"
