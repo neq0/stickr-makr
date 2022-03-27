@@ -9,29 +9,109 @@
 # Non-square images will be downscaled to the area of DIMENSION*DIMENSION.
 IMG_DIMENSION=400
 GIF_DIMENSION=200
-img_area=$(echo $IMG_DIMENSION | awk '{ print $1 * $1 }')
-gif_area=$(echo $GIF_DIMENSION | awk '{ print $1 * $1 }')
+
+SHORT=h,o,i:,g:
+LONG=help,only-images,image-dimension:,gif-dimension:
+USAGE="\
+NAME
+	stickr-makr - generate stickers from images/gifs
+
+SYNOPSIS
+	make-stickers.sh [OPTIONS] FOLDER
+
+OPTIONS
+	-h, --help
+		Print this help text and exit
+
+	-o, --only-images
+		Skip gifs when converting; as a result,
+		FFmpeg is not a requirement
+
+	-i DIM, --image-dimension DIM
+		Set image sticker dimension.
+		The side length of a square sticker
+		would be DIM. If the sticker is
+		non-square, its area would be the same
+		as that of a square sticker with side
+		length of DIM. The default value
+		is 400, which means every converted
+		sticker would be 160000 pixels large.
+
+	-g DIM, --gif-dimension DIM
+		Set gif sticker dimension.
+		The default value is 200."
+
+PARSED=$(getopt --options $SHORT --longoptions $LONG \
+	--name "stickr-makr" -- "$@")
+# The parameters are malformed
+if [[ $? -ne 0 ]]; then exit 1; fi
+
+eval set -- "$PARSED"
+
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+		-h|--help)
+			echo "$USAGE"
+			exit 0
+			;;
+		-o|--only-images)
+			ONLY_IMAGES=1
+			shift
+			;;
+		-i|--image-dimension)
+			IMG_DIMENSION="$2"
+			if [[ ! ( 20 -le $IMG_DIMENSION && $IMG_DIMENSION -le 2000 ) ]]; then
+				>&2 echo "Image dimension invalid."
+				exit 1
+			fi
+			shift
+			shift
+			;;
+		-g|--gif-dimension)
+			GIF_DIMENSION="$2"
+			if [[ ! ( 20 -le $GIF_DIMENSION && $GIF_DIMENSION -le 2000 ) ]]; then
+				>&2 echo "Gif dimension invalid."
+				exit 1
+			fi
+			shift
+			shift
+			;;
+		--)
+			# End of options
+			shift
+			break
+			;;
+		*)
+			>&2 echo "Unrecogized option: $1"
+			exit 1
+			;;
+	esac
+done
+
+if [[ $# -eq 0 ]]; then
+	>&2 echo "No folder given."
+	exit 1
+fi
+
+IMG_DIR="$1"
+if [ ! -d "$IMG_DIR" ]; then
+	echo "$IMG_DIR is not a directory."
+	echo "Exiting..."
+	exit 1
+fi
 
 # ImageMagick is required
-command -v magick > /dev/null
+command -v magick >/dev/null
 if [ $? -ne 0 ]; then
 	echo "ImageMagick not detected."
 	echo "Exiting..."
 	exit 1
 fi
 
-# FFmpeg is required
-command -v ffmpeg > /dev/null
-if [ $? -ne 0 ]; then
+# If ONLY_IMAGES flag not set, FFmpeg is required
+command -v ffmpeg >/dev/null
+if [[ $ONLY_IMAGES -eq 1 && $? -ne 0 ]]; then
 	echo "FFmpeg not detected."
-	echo "Exiting..."
-	exit 1
-fi
-
-# Parameter must be a directory
-IMG_DIR="$1"
-if [ ! -d "$IMG_DIR" ]; then
-	echo "$IMG_DIR is not a directory."
 	echo "Exiting..."
 	exit 1
 fi
@@ -45,6 +125,9 @@ if [[ -d Stickers/ && -n $(ls -A Stickers/) ]]; then
 		exit 0
 	fi
 fi
+
+img_area=$(echo $IMG_DIMENSION | awk '{ print $1 * $1 }')
+gif_area=$(echo $GIF_DIMENSION | awk '{ print $1 * $1 }')
 
 # Wipe out Stickers/
 rm -rf Stickers/ 
@@ -119,7 +202,12 @@ for file in $files; do
 		scale_down_image "$file" png
 	# Match gifs
 	elif [[ "$file" =~ .+\.gif$ ]]; then
+		if [ $ONLY_IMAGES -eq 1 ]; then
+			continue
+		fi
 		scale_down_gif "$file"
+	else
+		continue
 	fi
 
 	# Error handling
