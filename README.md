@@ -18,23 +18,41 @@ Images can also be downscaled in the same fashion to reduce size.
 
 ## Usage
 
-Give execute permissions:
-
-```shell
-chmod +x make-stickers.sh
 ```
+NAME
+	stickr-makr - generate stickers from images/gifs
 
-Run:
+SYNOPSIS
+	make-stickers.sh [OPTIONS] FOLDER
 
-```shell
-./make-stickers.sh FOLDER
+DESCRIPTION
+	This script will generate stickers (downscaled
+	images and gifs) from files in the FOLDER. Stickers
+	will be put under a new folder ./Stickers; Original
+	images/gifs will be untouched.
+
+OPTIONS
+	-h, --help
+		Print this help text and exit
+
+	-o, --only-images
+		Skip gifs when converting; as a result,
+		FFmpeg is not a requirement
+
+	-i DIM, --image-dimension DIM
+		Set image sticker dimension.
+		The side length of a square sticker
+		would be DIM. If the sticker is
+		non-square, its area would be the same
+		as that of a square sticker with side
+		length of DIM. The default value
+		is 400, which means every converted
+		sticker would be 160000 pixels large.
+
+	-g DIM, --gif-dimension DIM
+		Set gif sticker dimension.
+		The default value is 200.
 ```
-
-A new `Stickers/` folder will be created under the current working directory, containing all stickers converted from `FOLDER`. The `FOLDER` will be untouched.
-
-## Change sticker size
-
-See the `DIMENSION` variable in `make-stickers.sh`.
 
 ## Requirements
 
