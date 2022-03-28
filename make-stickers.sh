@@ -48,6 +48,9 @@ if [[ $? -ne 0 ]]; then exit 1; fi
 
 eval set -- "$PARSED"
 
+# Set flag default
+ONLY_IMAGES=0
+
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 		-h|--help)
