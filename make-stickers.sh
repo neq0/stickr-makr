@@ -16,6 +16,12 @@ NAME
 SYNOPSIS
 	make-stickers.sh [OPTIONS] FOLDER
 
+DESCRIPTION
+	This script will generate stickers (downscaled
+	images and gifs) from files in the FOLDER. Stickers
+	will be put under a new folder ./Stickers; Original
+	images/gifs will be untouched.
+
 OPTIONS
 	-h, --help
 		Print this help text and exit
@@ -45,6 +51,7 @@ if [[ $? -ne 0 ]]; then exit 1; fi
 
 eval set -- "$PARSED"
 
+# Set flag default
 ONLY_IMAGES=0
 
 while [[ $# -gt 0 ]]; do
