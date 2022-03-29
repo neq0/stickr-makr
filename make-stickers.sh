@@ -1,9 +1,6 @@
 #!/bin/bash
 
-# Pass in a folder as parameter, this scripts converts all images in
-# said folder into stickers (downscaled images).
-# The scale is controlled by DIMENSION.
-# Converted stickers will be put under ./Stickers/
+# stickr-makr (C) 2022 ElectroQt
 
 # A square image will be downscaled to DIMENSION*DIMENSION (max).
 # Non-square images will be downscaled to the area of DIMENSION*DIMENSION.
@@ -47,6 +44,8 @@ PARSED=$(getopt --options $SHORT --longoptions $LONG \
 if [[ $? -ne 0 ]]; then exit 1; fi
 
 eval set -- "$PARSED"
+
+ONLY_IMAGES=0
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
@@ -96,15 +95,18 @@ fi
 IMG_DIR="$1"
 if [ ! -d "$IMG_DIR" ]; then
 	echo "$IMG_DIR is not a directory."
-	echo "Exiting..."
+	echo "Exit."
 	exit 1
 fi
+
+# Store the script location to correctly locate bin/pngquant
+SCRIPT_DIR=$(dirname "$0")
 
 # ImageMagick is required
 command -v magick >/dev/null
 if [ $? -ne 0 ]; then
 	echo "ImageMagick not detected."
-	echo "Exiting..."
+	echo "Exit."
 	exit 1
 fi
 
@@ -121,7 +123,7 @@ if [[ -d Stickers/ && -n $(ls -A Stickers/) ]]; then
 	echo "The directory Stickers/ exists and is non-empty."
 	read 2>&1 -p "Its contents will be wiped out. Proceed? (Y/N) "
 	if [[ "$REPLY" != Y && "$REPLY" != y ]]; then
-		echo "Aborting..."
+		echo "Abort."
 		exit 0
 	fi
 fi
@@ -140,52 +142,57 @@ mkdir -p Stickers/
 tmp_dir=$(mktemp -d) || tmp_dir="./.temp/"
 mkdir -p $tmp_dir
 
-scale_down_image() {
-	file="$1"
-	final_extension="$2"
-	directory=$(dirname "$file")
-	# If JPEG image, change file extension to .jpg
-	# If PNG image, do not change file extension
-	final_file="./Stickers/${file%\.*}.$final_extension"
+scale_down_jpg() {
+	# Purge tmp_dir
+	rm -rf $tmp_dir/*
 
-	mkdir -p "./Stickers/$directory"
-	# @: scale image area to $area; >: only downscale images
-	# Doc https://legacy.imagemagick.org/Usage/resize/#resize
-	err_msg=$(magick convert "$IMG_DIR/$file" -resize "$img_area@>" "$final_file" 2>&1 >/dev/null) || return 1
+	# Doc on resizing images: https://legacy.imagemagick.org/Usage/resize/#resize
+	err_msg=$(convert "$input" -quality 85% \
+		-resize "$img_area@>" "$tmp_dir/simple.jpg" 2>&1 >/dev/null) || return 1
+	# Jpeg compression technique copied from https://stackoverflow.com/a/7262050/10435897
+	err_msg=$(convert "$input" -interlace Plane -gaussian-blur 0.05 -quality 85% \
+		-resize "$img_area@>" "$tmp_dir/optimized.jpg" 2>&1 >/dev/null) || return 1
+
+	if [[ $(stat --printf %s "$tmp_dir/simple.jpg") -le $(stat --printf %s "$tmp_dir/optimized.jpg") ]]
+	then cp "$tmp_dir/simple.jpg" "$output"
+	else cp "$tmp_dir/optimized.jpg" "$output"
+	fi
+}
+
+scale_down_png() {
+	err_msg=$(convert "$input" -resize "$img_area@>" "$output" 2>&1 >/dev/null) || return 1
+	# Use pngquant to compress png. Overwrite original
+	err_msg=$("$SCRIPT_DIR/bin/pngquant" --skip-if-larger --force --ext ".png" "$output") || return 1
 }
 
 scale_down_gif() {
-	file="$1"
-	directory=$(dirname "$file")
-	final_file="./Stickers/$file"
-
 	# Purge tmp_dir
 	rm -rf $tmp_dir/*
 
 	# Generate palette from source gif for better gif quality
 	# Copied from https://superuser.com/a/1049820/1344967
-	err_msg=$(ffmpeg -y -i "$IMG_DIR/$file" -vf palettegen $tmp_dir/palette.png 2>&1 >/dev/null) || return 1
+	err_msg=$(ffmpeg -y -i "$input" -vf palettegen $tmp_dir/palette.png 2>&1 >/dev/null) || return 1
 
 	# Find fps of source gif.
 	# Copied from https://askubuntu.com/a/110269/1420906
-	fps=$(ffmpeg -i "$IMG_DIR/$file" 2>&1 | sed -n "s/.*, \(.*\) fp.*/\1/p")
+	fps=$(ffmpeg -i "$input" 2>&1 | sed -n "s/.*, \(.*\) fp.*/\1/p")
 
 	mkdir $tmp_dir/frames
 	# Split source gif into frames 0001.png, 0002.png, etc
-	err_msg=$(ffmpeg -i "$IMG_DIR/$file" $tmp_dir/frames/%04d.png 2>&1 >/dev/null) || return 1
+	err_msg=$(ffmpeg -i "$input" $tmp_dir/frames/%04d.png 2>&1 >/dev/null) || return 1
 
 	# Downscale each frame
 	for frame in $tmp_dir/frames/*; do
 		frame_name=$(basename $frame)
-		err_msg=$(magick convert "$frame" -resize "$gif_area@>" "$tmp_dir/frames/final_$frame_name" 2>&1 >/dev/null) || return 1
+		frame_output="$tmp_dir/frames/final_$frame_name"
+		# Doc on resizing images: https://legacy.imagemagick.org/Usage/resize/#resize
+		err_msg=$(convert "$frame" -resize "$gif_area@>" "$frame_output" 2>&1 >/dev/null) || return 1
 	done
 
-	# ffmpeg -y -r $fps -i $tmp_dir/frames/final_%04d.png -i $tmp_dir/palette.png -filter_complex paletteuse -r $fps "./Stickers/$file"
-	mkdir -p "./Stickers/$directory"
 	# Reassemble frames into gif, set framerate, use pallete
-	# Also copied from https://superuser.com/a/1049820/1344967
+	# Copied from https://superuser.com/a/1049820/1344967
 	err_msg=$(ffmpeg -y -r $fps -i $tmp_dir/frames/final_%04d.png \
-		-i $tmp_dir/palette.png -filter_complex paletteuse "$final_file" 2>&1 >/dev/null) || return 1
+		-i $tmp_dir/palette.png -filter_complex paletteuse "$output" 2>&1 >/dev/null) || return 1
 }
 
 echo "Converting..."
@@ -195,30 +202,37 @@ old_IFS="$IFS"
 IFS=$'\n'
 for file in $files; do
 	# Match JPEGs
+	input="$IMG_DIR/$file"
+	directory=$(dirname "$file")
+	mkdir -p "./Stickers/$directory"
 	if [[ "$file" =~ .+\.(jpe?g|jf?if)$ ]]; then
-		scale_down_image "$file" jpg
+		# Change extension to .jpg
+		output="./Stickers/${file%\.*}.jpg"
+		scale_down_jpg "$input" "$output"	
 	# Match PNGs
 	elif [[ "$file" =~ .+\.png$ ]]; then
-		scale_down_image "$file" png
+		output="./Stickers/$file"
+		scale_down_png "$input" "$output"	
 	# Match gifs
 	elif [[ "$file" =~ .+\.gif$ ]]; then
 		if [ $ONLY_IMAGES -eq 1 ]; then
 			continue
 		fi
-		scale_down_gif "$file"
+		output="./Stickers/$file"
+		scale_down_gif "$input" "$output"
 	else
 		continue
 	fi
 
 	# Error handling
 	if [ $? -eq 0 ]; then
-		echo "Created: $final_file"
+		echo "Created: $output"
 	else
-		>&2 echo -e "Failed to convert "$(realpath $IMG_DIR/$file)". Error message:"
-		>&2 echo "$err_msg"
-		>&2 echo
+		input_path=$(realpath "$input")
+		>&2 echo -e "Failed to convert $input_path. Error message:\n$err_msg"
 	fi
 done
 IFS="$old_IFS"
 
 echo "Conversion completed"
+rm -rf $tmp_dir
